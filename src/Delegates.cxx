@@ -7,29 +7,6 @@ using namespace NS;
 
 HaruhiDelegate::HaruhiDelegate() {
   engine_ = new Haruhi();
-
-  HaruhiResourceLoader::loadResources(p_device_);
-
-  MTL::TextureDescriptor* pTexDesc =
-    MTL::TextureDescriptor::texture2DDescriptor(
-      MTL::PixelFormatA8Unorm, 16, 16, false);
-
-  auto blockTex = p_device_->newTexture(pTexDesc);
-
-  // MTK::TextureLoader* pTextureLoad = MTK::TextureLoader::alloc()->init(p_device_);
-
-  // Error* pErr = nullptr;
-
-  // MTL::Texture* blockTex =
-  //   pTextureLoad->newTexture(
-  //     URL::fileURLWithPath(
-  //       String::string("resource/blocks.png", UTF8StringEncoding)),
-  //       nullptr, &pErr);
-  // if(pErr) {
-  //   printf("Failed to load texture, %s\n", pErr->localizedDescription()->utf8String());
-  //   abort();
-  // }
-  engine_->accessResourcePool()->setTexture(std::string("blocks"), blockTex);
 }
 
 HaruhiDelegate::~HaruhiDelegate() {
@@ -121,10 +98,14 @@ HaruhiDelegate::applicationDidFinishLaunching(NS::Notification * pNot) {
   p_device_ = MTL::CreateSystemDefaultDevice();
 
   p_mtkView_ = MTK::View::alloc()->init(frame, p_device_);
-  p_mtkView_->setColorPixelFormat(MTL::PixelFormat::PixelFormatBGRA8Unorm_sRGB);
+  p_mtkView_->setColorPixelFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
   p_mtkView_->setClearColor(MTL::ClearColor::Make(.1, .1, .1, 1.));
   p_mtkView_->setDepthStencilPixelFormat(MTL::PixelFormatDepth16Unorm);
   p_mtkView_->setClearDepth(1.);
+
+  HaruhiResourceLoader::loadResources(
+    p_device_,
+    engine_->accessResourcePool());
 
   viewDelegate_ = new HaruhiViewDelegate(engine_, p_device_);
   p_mtkView_->setDelegate(viewDelegate_);

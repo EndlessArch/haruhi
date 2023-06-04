@@ -45,7 +45,7 @@ public:
   void buildDepthStencilStates();
   void buildTextures();
   void buildBufs();
-  void generateMandelbrotTexture(MTL::CommandBuffer*);
+  void computeTexture(MTL::CommandBuffer*);
   void draw(MTK::View*);
 };
 

@@ -7,8 +7,10 @@ HaruhiResourcePool::HaruhiResourcePool() {
 }
 
 HaruhiResourcePool::~HaruhiResourcePool() {
-  for(auto& it : texture_pool_)
+  for(auto& it : texture_pool_) {
+    // free(it.second->buffer());
     it.second->release();
+  }
 }
 
 MTL::Texture*
@@ -18,6 +20,6 @@ HaruhiResourcePool::getTexture(std::string name) noexcept {
 
 void
 HaruhiResourcePool::setTexture(std::string name, MTL::Texture * tex) noexcept {
-  assert(!tex);
+  assert(tex);
   texture_pool_[name] = tex;
 }

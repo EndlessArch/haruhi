@@ -64,35 +64,44 @@ HaruhiRenderer::buildShaders() {
         float4x4 worldTransform;
         float3x3 worldNormalTransform;
     };
-    v2f vertex vertexMain(device const VertexData* vertexData [[buffer(0)]],
+    v2f vertex fn_vertex(device const VertexData* vertexData [[buffer(0)]],
                           device const InstanceData* instanceData [[buffer(1)]],
                           device const CameraData& cameraData [[buffer(2)]],
                           uint vertexId [[vertex_id]],
                           uint instanceId [[instance_id]] )
     {
-        v2f o;
-        const device VertexData& vd = vertexData[ vertexId ];
-        float4 pos = float4( vd.position, 1.0 );
-        pos = instanceData[ instanceId ].instanceTransform * pos;
-        pos = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
-        o.position = pos;
-        float3 normal = instanceData[ instanceId ].instanceNormalTransform * vd.normal;
-        normal = cameraData.worldNormalTransform * normal;
-        o.normal = normal;
-        o.texcoord = vd.texcoord.xy;
-        o.color = half3( instanceData[ instanceId ].instanceColor.rgb );
-        return o;
+      device const auto& cvert = vertexData[vertexId];
+      device const auto& cinst = instanceData[instanceId];
+      device const auto& ccam = cameraData;
+
+      float4 pos =
+        ccam.perspectiveTransform * ccam.worldTransform
+        * cinst.instanceTransform * float4(cvert.position, 1.0);
+
+      float3 norm =
+        ccam.worldNormalTransform *
+        (cinst.instanceNormalTransform * cvert.normal);
+      ;
+      return (struct v2f){pos, norm, half3(cinst.instanceColor.rgb), cvert.texcoord.xy};
     }
-    half4 fragment fragMain( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]] )
-    {
-        constexpr sampler s( address::repeat, filter::linear );
-        half3 texel = tex.sample( s, in.texcoord ).rgb;
-        // assume light coming from (front-top-right)
-        float3 l = normalize(float3( 1.0, 1.0, 0.8 ));
-        float3 n = normalize( in.normal );
-        half ndotl = half( saturate( dot( n, l ) ) );
-        half3 illum = (in.color * texel * 0.1) + (in.color * texel * ndotl);
-        return half4( illum, 1.0 );
+    half4 fragment fn_frag(
+        v2f in [[stage_in]],
+        texture2d<half, access::sample> tex [[texture(0)]],
+        sampler texSampler [[sampler(0)]]
+      ) {
+        // half3 texel = {.5, .5, .5};
+      half3 texel = tex.sample( texSampler, in.texcoord ).rgb;
+
+      float3 l = normalize(float3( 1.0, 1.0, 0.8 ));
+      float3 n = normalize( in.normal );
+
+      half ndotl = half( saturate( dot( n, l ) ) );
+
+      half3 illum = (in.color * texel * 0.1) + (in.color * texel * ndotl);
+      return half4( illum, 1.0 );
+
+      // return half4(1.);
+      return half4(tex.sample(texSampler, in.texcoord).rgb, 1.);
     }
     )";
   ;
@@ -111,9 +120,9 @@ HaruhiRenderer::buildShaders() {
   }
 
   MTL::Function* vertexFn =
-    pLib->newFunction(String::string("vertexMain", UTF8StringEncoding));
+    pLib->newFunction(String::string("fn_vertex", UTF8StringEncoding));
   MTL::Function* fragFn =
-    pLib->newFunction(String::string("fragMain", UTF8StringEncoding));
+    pLib->newFunction(String::string("fn_frag", UTF8StringEncoding));
   ;
 
   MTL::RenderPipelineDescriptor* pDesc = MTL::RenderPipelineDescriptor::alloc()->init();
@@ -139,6 +148,7 @@ HaruhiRenderer::buildComputePipeline() {
     #include <metal_stdlib>
     using namespace metal;
     kernel void compute_texture(texture2d<float, access::write> out [[texture(0)]],
+                                texture2d<float, access::read>  in  [[texture(1)]],
                                 device const uint* image [[buffer(0)]],
                                 uint2 id [[thread_position_in_grid]])
     {
@@ -274,12 +284,24 @@ HaruhiRenderer::buildBufs() {
   };
   
   uint16_t indices[] = {
-      0,  1,  2,  2,  3,  0, /* front */
-      4,  5,  6,  6,  7,  4, /* right */
-      8,  9, 10, 10, 11,  8, /* back */
-    12, 13, 14, 14, 15, 12, /* left */
-    16, 17, 18, 18, 19, 16, /* top */
-    20, 21, 22, 22, 23, 20, /* bot */
+    // front
+    0,  1,  2,
+    2,  3,  0,
+    // right
+    4,  5,  6,
+    6,  7,  4,
+    // back
+    8,  9, 10,
+    10, 11, 8,
+    // left
+    12, 13, 14,
+    14, 15, 12,
+    //top
+    16, 17, 18,
+    18, 19, 16,
+    //bot
+    20, 21, 22,
+    22, 23, 20,
   };
 
   constexpr size_t vertexData_sz = sizeof(verts);
@@ -312,7 +334,7 @@ HaruhiRenderer::buildBufs() {
 }
 
 void
-HaruhiRenderer::generateMandelbrotTexture(MTL::CommandBuffer* pCmdBuf) {
+HaruhiRenderer::computeTexture(MTL::CommandBuffer* pCmdBuf) {
   if(!pCmdBuf) {
     printf("Command buffer got null-ed\n");
     abort();
@@ -320,12 +342,13 @@ HaruhiRenderer::generateMandelbrotTexture(MTL::CommandBuffer* pCmdBuf) {
 
   // unsigned* ptr = reinterpret_cast<unsigned *>(pTextureAnimationBuf->contents());
   //# *ptr = (animation_ind_++) % 5000;
-  pTextureAnimationBuf->didModifyRange(Range::Make(0, sizeof(unsigned)));
+  // pTextureAnimationBuf->didModifyRange(Range::Make(0, sizeof(unsigned)));
 
   MTL::ComputeCommandEncoder* pCCE = pCmdBuf->computeCommandEncoder();
 
   pCCE->setComputePipelineState(p_cps_);
   pCCE->setTexture(p_texture_, 0);
+  pCCE->setTexture(p_texture_, 1);
   pCCE->setBuffer(pTextureAnimationBuf, 0, 0);
 
   MTL::Size grid_sz(16, 16, 1); // chunk?
@@ -354,39 +377,44 @@ HaruhiRenderer::draw(MTK::View * pView) {
   MTL::CommandBuffer* p_cmd_buf = p_cmd_queue_->commandBuffer();
 
   dispatch_semaphore_wait(sema_, DISPATCH_TIME_FOREVER);
-  HaruhiRenderer* p_renderer = this;
-  p_cmd_buf->addCompletedHandler([p_renderer](MTL::CommandBuffer* p_cmd) {
-    dispatch_semaphore_signal(p_renderer->sema_);
+  p_cmd_buf->addCompletedHandler([this](MTL::CommandBuffer* p_cmd) {
+    dispatch_semaphore_signal(this->sema_);
   });
+
+  static uint __cnt = 0; ++__cnt;
 
   shader_t::InstanceData* p_instanceData =
     reinterpret_cast<shader_t::InstanceData*>(p_instanceData_buf->contents());
-  ;
-
-  p_instanceData[0].instanceTransform = math::makeTranslate({ 0., 0., -5. });
+  p_instanceData[0].instanceTransform =
+    math::makeTranslate({ 0., 0., -3. })
+    * math::makeYRotate(__cnt*0.02*3.14) * math::makeXRotate(0.2);
   p_instanceData[0].instanceNormalTransform =
     math::discardTranslation(p_instanceData[0].instanceTransform);
   p_instanceData[0].instanceColor = {.5,.5,.5,1.};//{ 0., 5., 5., 1. };
-
-  //
-
   p_instanceData_buf->didModifyRange(Range::Make(0, p_instanceData_buf->length()));
 
   MTL::Buffer* p_cameraData_buf = pCameraBuf[frame_];
-  shader_t::CameraData* p_cameraData = reinterpret_cast<shader_t::CameraData *>(p_cameraData_buf->contents());
+  shader_t::CameraData* p_cameraData =
+    reinterpret_cast<shader_t::CameraData *>(p_cameraData_buf->contents());
   constexpr float FOV = 90.;
   p_cameraData->perspTransform =
-    math::makePerspective(FOV * 3.141592 / 180., 1., .03, 500.)
-    * math::makeYRotate(0.1)
-    * math::makeXRotate(0.1);
+    math::makePerspective(FOV * 3.141592 / 180., 1., .03, 500.);
   // const auto delta = animation_ind_/10.;  // printf("%d\n", animation_ind_);
   p_cameraData->worldTransform = math::makeIdentity();
-    // math::makeTranslate({cosf(delta), sinf(delta), 1.});
-
+    // // * math::makeTranslate({cosf(3.14*frame_*.02), sinf(3.14*frame_*.02), 1.});
   p_cameraData->worldNormalTransform = math::discardTranslation(p_cameraData->worldTransform);
-  p_cameraData_buf->didModifyRange(Range::Make(0, sizeof(shader_t::CameraData)));
+  p_cameraData_buf->didModifyRange(Range::Make(0, 1*sizeof(shader_t::CameraData)));
 
-  generateMandelbrotTexture(p_cmd_buf);
+  // WARNING: Maybe you should restart your computer
+  // computeTexture(p_cmd_buf);
+
+  MTL::SamplerDescriptor* p_sd = MTL::SamplerDescriptor::alloc()->init();
+  // p_sd->setNormalizedCoordinates(false);
+  p_sd->setMagFilter(MTL::SamplerMinMagFilterLinear);
+  p_sd->setMinFilter(MTL::SamplerMinMagFilterLinear);
+  p_sd->setSAddressMode(MTL::SamplerAddressModeRepeat);
+  p_sd->setTAddressMode(MTL::SamplerAddressModeRepeat);
+  auto p_ss = p_device_->newSamplerState(p_sd);
 
   MTL::RenderPassDescriptor* p_rpd = pView->currentRenderPassDescriptor();
 
@@ -402,6 +430,7 @@ HaruhiRenderer::draw(MTK::View * pView) {
   p_rce->setVertexBuffer(p_cameraData_buf, 0, 2);
 
   p_rce->setFragmentTexture(p_texture_, 0);
+  p_rce->setFragmentSamplerState(p_ss, 0);
 
   p_rce->setCullMode(MTL::CullModeBack);
   p_rce->setFrontFacingWinding(MTL::WindingCounterClockwise);

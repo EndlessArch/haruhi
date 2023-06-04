@@ -9,6 +9,7 @@
 namespace MTL {
 class Device;
 } // ns MTL
+class HaruhiResourcePool;
 
 namespace HaruhiResourceLoader {
 
@@ -20,7 +21,7 @@ load_image_at(const char *) noexcept;
 } // ns ImageUtil
 
 void
-loadResources(MTL::Device*) noexcept;
+loadResources(MTL::Device*, HaruhiResourcePool*) noexcept;
 
 } // ns HaruhiResourceLoader
 
