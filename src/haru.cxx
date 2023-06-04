@@ -1,7 +1,4 @@
-#include <iostream>
-
-#include <mtl_metal.hpp>
-#include <AppKit/AppKit.hpp>
+#include <mtl.hpp>
 
 #include "Delegates.hxx"
 #include "MemoryUtility.hxx"

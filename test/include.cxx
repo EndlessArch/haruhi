@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <mtl_metal.hpp>
+#include <mtl.hpp>
 
 int main(int argc, char * argv[]) {
 

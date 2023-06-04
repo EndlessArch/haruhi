@@ -1,8 +1,44 @@
 #include "Delegates.hxx"
 
 #include "Renderer.hxx"
+#include "LoadResource.hxx"
 
 using namespace NS;
+
+HaruhiDelegate::HaruhiDelegate() {
+  engine_ = new Haruhi();
+
+  HaruhiResourceLoader::loadResources(p_device_);
+
+  MTL::TextureDescriptor* pTexDesc =
+    MTL::TextureDescriptor::texture2DDescriptor(
+      MTL::PixelFormatA8Unorm, 16, 16, false);
+
+  auto blockTex = p_device_->newTexture(pTexDesc);
+
+  // MTK::TextureLoader* pTextureLoad = MTK::TextureLoader::alloc()->init(p_device_);
+
+  // Error* pErr = nullptr;
+
+  // MTL::Texture* blockTex =
+  //   pTextureLoad->newTexture(
+  //     URL::fileURLWithPath(
+  //       String::string("resource/blocks.png", UTF8StringEncoding)),
+  //       nullptr, &pErr);
+  // if(pErr) {
+  //   printf("Failed to load texture, %s\n", pErr->localizedDescription()->utf8String());
+  //   abort();
+  // }
+  engine_->accessResourcePool()->setTexture(std::string("blocks"), blockTex);
+}
+
+HaruhiDelegate::~HaruhiDelegate() {
+  p_mtkView_->release();
+  p_win_->release();
+  p_device_->release();
+  delete viewDelegate_;
+  delete engine_;
+}
 
 Menu*
 HaruhiDelegate::createMenu() {
@@ -16,7 +52,7 @@ HaruhiDelegate::createMenu() {
   
   String* appName = RunningApplication::currentApplication()->localizedName();
   String* quitItemName =
-    NS::String::string("Quit", UTF8StringEncoding)->stringByAppendingString(appName);
+    NS::String::string("Quit ", UTF8StringEncoding)->stringByAppendingString(appName);
 
   SEL quitCbFn =
     MenuItem::registerActionCallback("appQuit",
@@ -76,7 +112,8 @@ HaruhiDelegate::applicationDidFinishLaunching(NS::Notification * pNot) {
 
   p_win_ = Window::alloc()->init(
     frame,
-    WindowStyleMaskBorderless,
+    // WindowStyleMaskBorderless,
+    WindowStyleMaskTitled,
     BackingStoreBuffered,
     false );
   ;
@@ -89,7 +126,7 @@ HaruhiDelegate::applicationDidFinishLaunching(NS::Notification * pNot) {
   p_mtkView_->setDepthStencilPixelFormat(MTL::PixelFormatDepth16Unorm);
   p_mtkView_->setClearDepth(1.);
 
-  viewDelegate_ = new HaruhiViewDelegate(p_device_);
+  viewDelegate_ = new HaruhiViewDelegate(engine_, p_device_);
   p_mtkView_->setDelegate(viewDelegate_);
 
   p_win_->setContentView(p_mtkView_);
@@ -101,8 +138,8 @@ HaruhiDelegate::applicationDidFinishLaunching(NS::Notification * pNot) {
   app->activateIgnoringOtherApps(true);
 }
 
-HaruhiViewDelegate::HaruhiViewDelegate(MTL::Device* pDevice)
-: p_renderer_(new HaruhiRenderer(pDevice)) {
+HaruhiViewDelegate::HaruhiViewDelegate(Haruhi* pHaru, MTL::Device* pDevice)
+: p_renderer_(new HaruhiRenderer(pHaru, pDevice)) {
   ;
 }
 

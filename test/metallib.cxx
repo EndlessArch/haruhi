@@ -4,9 +4,7 @@
 #include <initializer_list>
 #include <memory>
 
-#include <mtl_metal.hpp>
-#include "Foundation/NSString.hpp"
-#include "Foundation/NSTypes.hpp"
+#include <mtl.hpp>
 
 #define impl_deleter(dummyName, targetTypeName)  \
 struct __impl_deleter_##dummyName {\

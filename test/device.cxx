@@ -1,5 +1,4 @@
-#include <mtl_metal.hpp>
-#include <Metal/MTLDevice.hpp>
+#include <mtl.hpp>
 
 #include <iostream>
 #include <memory>

@@ -1,0 +1,3 @@
+[submodule "third_party/libspng"]
+	path = third_party/libspng
+	url = https://github.com/randy408/libspng

@@ -35,7 +35,7 @@ set(TestExecList
 )
 
 foreach(testListIt ${TestExecList})
-  target_link_libraries(${testListIt} haruhi)
+  target_link_libraries(${testListIt} haruhi_mtl)
 endforeach()
 
 # if compiled successfully, maybe it's enough?

@@ -1,9 +1,9 @@
 #ifndef HARUHI_DELEGATES_HPP
 #define HARUHI_DELEGATES_HPP
 
-#include <AppKit/AppKit.hpp>
-#include <MetalKit/MetalKit.hpp>
+#include <mtl.hpp>
 
+#include "GameEngine.hxx"
 #include "MemoryUtility.hxx"
 
 class HaruhiRenderer;
@@ -14,9 +14,12 @@ class HaruhiDelegate : public NS::ApplicationDelegate {
   MTK::View* p_mtkView_;
   MTL::Device* p_device_;
   HaruhiViewDelegate* viewDelegate_;
+
+  Haruhi* engine_;
   
 public:
-  virtual ~HaruhiDelegate() = default;
+  HaruhiDelegate();
+  virtual ~HaruhiDelegate();
 
   NS::Menu* createMenu();
   void applicationWillFinishLaunching(NS::Notification*) override;
@@ -29,7 +32,7 @@ public:
 class HaruhiViewDelegate : public MTK::ViewDelegate {
   HaruhiRenderer* p_renderer_;
 public:
-  HaruhiViewDelegate(MTL::Device*);
+  HaruhiViewDelegate(Haruhi*, MTL::Device*);
   virtual ~HaruhiViewDelegate();
   void drawInMTKView(MTK::View*) override;
 };

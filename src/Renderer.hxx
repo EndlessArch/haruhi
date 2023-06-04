@@ -1,12 +1,20 @@
 #ifndef HARUHI_RENDERER_HXX
 #define HARUHI_RENDERER_HXX
 
-#include <Metal/Metal.hpp>
-#include <MetalKit/MetalKit.hpp>
+#include <mtl.hpp>
 
-constexpr auto MAX_FRAMES_IN_FLIGHT = 3;
+constexpr auto MAX_FRAMES_IN_FLIGHT =
+#ifndef HARUHI_FRAMES_IN_FLIGHT
+3;
+#else
+HARUHI_MAX_FRAMES_IN_FLIGHT;
+#endif
+
+class Haruhi;
 
 class HaruhiRenderer {
+  Haruhi* p_haruhi_;
+
   MTL::Device* p_device_;
   MTL::CommandQueue* p_cmd_queue_;
   MTL::Library* p_shader_lib_;
@@ -29,7 +37,7 @@ class HaruhiRenderer {
 
 public:
 
-  HaruhiRenderer(MTL::Device*);
+  HaruhiRenderer(Haruhi*, MTL::Device*);
   ~HaruhiRenderer();
 
   void buildShaders();

@@ -1,9 +1,11 @@
 #include "Renderer.hxx"
 
+#include "GameEngine.hxx"
+
 using namespace NS;
 
-HaruhiRenderer::HaruhiRenderer(MTL::Device* pDev)
-: p_device_(pDev), angle_(0.), frame_(0), animation_ind_(0)
+HaruhiRenderer::HaruhiRenderer(Haruhi* pHaru, MTL::Device* pDev)
+: p_haruhi_(pHaru), p_device_(pDev), angle_(0.), frame_(0), animation_ind_(0)
 {
   p_cmd_queue_ = p_device_->newCommandQueue();
   buildShaders();
@@ -36,62 +38,62 @@ void
 HaruhiRenderer::buildShaders() {
   const char * shader_source = R"(
     #include <metal_stdlib>
-        using namespace metal;
-        struct v2f
-        {
-            float4 position [[position]];
-            float3 normal;
-            half3 color;
-            float2 texcoord;
-        };
-        struct VertexData
-        {
-            float3 position;
-            float3 normal;
-            float2 texcoord;
-        };
-        struct InstanceData
-        {
-            float4x4 instanceTransform;
-            float3x3 instanceNormalTransform;
-            float4 instanceColor;
-        };
-        struct CameraData
-        {
-            float4x4 perspectiveTransform;
-            float4x4 worldTransform;
-            float3x3 worldNormalTransform;
-        };
-        v2f vertex vertexMain( device const VertexData* vertexData [[buffer(0)]],
-                               device const InstanceData* instanceData [[buffer(1)]],
-                               device const CameraData& cameraData [[buffer(2)]],
-                               uint vertexId [[vertex_id]],
-                               uint instanceId [[instance_id]] )
-        {
-            v2f o;
-            const device VertexData& vd = vertexData[ vertexId ];
-            float4 pos = float4( vd.position, 1.0 );
-            pos = instanceData[ instanceId ].instanceTransform * pos;
-            pos = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
-            o.position = pos;
-            float3 normal = instanceData[ instanceId ].instanceNormalTransform * vd.normal;
-            normal = cameraData.worldNormalTransform * normal;
-            o.normal = normal;
-            o.texcoord = vd.texcoord.xy;
-            o.color = half3( instanceData[ instanceId ].instanceColor.rgb );
-            return o;
-        }
-        half4 fragment fragMain( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]] )
-        {
-            constexpr sampler s( address::repeat, filter::linear );
-            half3 texel = tex.sample( s, in.texcoord ).rgb;
-            // assume light coming from (front-top-right)
-            float3 l = normalize(float3( 1.0, 1.0, 0.8 ));
-            float3 n = normalize( in.normal );
-            half ndotl = half( saturate( dot( n, l ) ) );
-            half3 illum = (in.color * texel * 0.1) + (in.color * texel * ndotl);
-            return half4( illum, 1.0 );
-        }
+    using namespace metal;
+    struct v2f
+    {
+        float4 position [[position]];
+        float3 normal;
+        half3 color;
+        float2 texcoord;
+    };
+    struct VertexData
+    {
+        float3 position;
+        float3 normal;
+        float2 texcoord;
+    };
+    struct InstanceData
+    {
+        float4x4 instanceTransform;
+        float3x3 instanceNormalTransform;
+        float4 instanceColor;
+    };
+    struct CameraData
+    {
+        float4x4 perspectiveTransform;
+        float4x4 worldTransform;
+        float3x3 worldNormalTransform;
+    };
+    v2f vertex vertexMain(device const VertexData* vertexData [[buffer(0)]],
+                          device const InstanceData* instanceData [[buffer(1)]],
+                          device const CameraData& cameraData [[buffer(2)]],
+                          uint vertexId [[vertex_id]],
+                          uint instanceId [[instance_id]] )
+    {
+        v2f o;
+        const device VertexData& vd = vertexData[ vertexId ];
+        float4 pos = float4( vd.position, 1.0 );
+        pos = instanceData[ instanceId ].instanceTransform * pos;
+        pos = cameraData.perspectiveTransform * cameraData.worldTransform * pos;
+        o.position = pos;
+        float3 normal = instanceData[ instanceId ].instanceNormalTransform * vd.normal;
+        normal = cameraData.worldNormalTransform * normal;
+        o.normal = normal;
+        o.texcoord = vd.texcoord.xy;
+        o.color = half3( instanceData[ instanceId ].instanceColor.rgb );
+        return o;
+    }
+    half4 fragment fragMain( v2f in [[stage_in]], texture2d< half, access::sample > tex [[texture(0)]] )
+    {
+        constexpr sampler s( address::repeat, filter::linear );
+        half3 texel = tex.sample( s, in.texcoord ).rgb;
+        // assume light coming from (front-top-right)
+        float3 l = normalize(float3( 1.0, 1.0, 0.8 ));
+        float3 n = normalize( in.normal );
+        half ndotl = half( saturate( dot( n, l ) ) );
+        half3 illum = (in.color * texel * 0.1) + (in.color * texel * ndotl);
+        return half4( illum, 1.0 );
+    }
     )";
   ;
 
@@ -126,8 +128,8 @@ HaruhiRenderer::buildShaders() {
     abort();
   }
 
-  std::initializer_list<Object*> to_release {vertexFn, fragFn, pDesc};
-  std::for_each(to_release.begin(), to_release.end(), [](Object*p){ p->release(); });
+  for(auto it : (Object*[]){vertexFn, fragFn, pDesc})
+    it->release();
   p_shader_lib_ = pLib;
 }
 
@@ -136,42 +138,13 @@ HaruhiRenderer::buildComputePipeline() {
   const char * kernel_source = R"(
     #include <metal_stdlib>
     using namespace metal;
-    kernel void mandelbrot_set( texture2d< half, access::write > tex [[texture(0)]],
-                                uint2 index [[thread_position_in_grid]],
-                                uint2 gridSize [[threads_per_grid]],
-                                device const uint* frame [[buffer(0)]])
+    kernel void compute_texture(texture2d<float, access::write> out [[texture(0)]],
+                                device const uint* image [[buffer(0)]],
+                                uint2 id [[thread_position_in_grid]])
     {
-      constexpr float kAnimationFrequency = 0.01;
-      constexpr float kAnimationSpeed = 4;
-      constexpr float kAnimationScaleLow = 0.62;
-      constexpr float kAnimationScale = 0.38;
-      constexpr float2 kMandelbrotPixelOffset = {-0.2, -0.35};
-      constexpr float2 kMandelbrotOrigin = {-1.2, -0.32};
-      constexpr float2 kMandelbrotScale = {2.2, 2.0};
-      // Map time to zoom value in [kAnimationScaleLow, 1]
-      float zoom = kAnimationScaleLow + kAnimationScale * cos(kAnimationFrequency * *frame);
-      // Speed up zooming
-      zoom = pow(zoom, kAnimationSpeed);
-      //Scale
-      float x0 = zoom * kMandelbrotScale.x *
-        ((float)index.x / gridSize.x + kMandelbrotPixelOffset.x) + kMandelbrotOrigin.x;
-      float y0 = zoom * kMandelbrotScale.y * 
-        ((float)index.y / gridSize.y + kMandelbrotPixelOffset.y) + kMandelbrotOrigin.y;
-      // Implement Mandelbrot set
-      float x = 0.0;
-      float y = 0.0;
-      uint iteration = 0;
-      uint max_iteration = 1000;
-      float xtmp = 0.0;
-      while(x * x + y * y <= 4 && iteration < max_iteration) {
-        xtmp = x * x - y * y + x0;
-        y = 2 * x * y + y0;
-        x = xtmp;
-        iteration += 1;
-      }
-      // Convert iteration result to colors
-      half color = (0.5 + 0.5 * cos(3.0 + iteration * 0.15));
-      tex.write(half4(color, color, color, 1.0), index, 0);
+      float3 val = in.read(id).rgb;
+      constexpr float emphasis = 1.; // .9
+      out.write(emphasis * float4(val.r, val.g, val.b, 1.0), id);
     }
   )";
 
@@ -186,15 +159,15 @@ HaruhiRenderer::buildComputePipeline() {
     abort();
   }
 
-  MTL::Function* pMandelbrotFn =
-    pComputeLib->newFunction(String::string("mandelbrot_set", UTF8StringEncoding));
-  p_cps_ = p_device_->newComputePipelineState(pMandelbrotFn, &pErr);
+  MTL::Function* pComputeFn =
+    pComputeLib->newFunction(String::string("compute_texture", UTF8StringEncoding));
+  p_cps_ = p_device_->newComputePipelineState(pComputeFn, &pErr);
   if(!p_cps_) {
     printf("%s", pErr->localizedDescription()->utf8String());
     abort();
   }
 
-  pMandelbrotFn->release();
+  pComputeFn->release();
   pComputeLib->release();
 }
 
@@ -209,25 +182,32 @@ HaruhiRenderer::buildDepthStencilStates() {
   pDSdesc->release();
 }
 
-constexpr auto TEXTURE_WIDTH = 128;
-constexpr auto TEXTURE_HEIGHT = 128;
-
 void
 HaruhiRenderer::buildTextures() {
-  MTL::TextureDescriptor* pTextureDesc = MTL::TextureDescriptor::alloc()->init();
-  pTextureDesc->setWidth(TEXTURE_WIDTH);
-  pTextureDesc->setHeight(TEXTURE_HEIGHT);
-  pTextureDesc->setPixelFormat(MTL::PixelFormatRGBA8Unorm);
-  pTextureDesc->setTextureType(MTL::TextureType2D);
-  pTextureDesc->setStorageMode(MTL::StorageModeManaged);
-  pTextureDesc->setUsage(
-    MTL::ResourceUsageSample | MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-  ;
 
-  MTL::Texture* pTexture = p_device_->newTexture(pTextureDesc);
-  p_texture_ = pTexture;
+  Error* pErr = nullptr;
 
-  pTextureDesc->release();
+  // 22, 8 9 10
+  p_texture_ = p_haruhi_->accessResourcePool()->getTexture("blocks");
+
+  // MTL::TextureDescriptor::textureBufferDescriptor texDesc(
+  //   MTL::PixelFormatA8Unorm, 16,
+  //   MTL::ResourceStorageModeManaged, MTL::ResourceUsageSample);
+
+  // MTL::TextureDescriptor* pTextureDesc = MTL::TextureDescriptor::alloc()->init();
+  // pTextureDesc->setWidth(TEXTURE_WIDTH);
+  // pTextureDesc->setHeight(TEXTURE_HEIGHT);
+  // pTextureDesc->setPixelFormat(MTL::PixelFormatRGBA8Unorm);
+  // pTextureDesc->setTextureType(MTL::TextureType2D);
+  // pTextureDesc->setStorageMode(MTL::StorageModeManaged);
+  // pTextureDesc->setUsage(
+  //   MTL::ResourceUsageSample | MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+  // ;
+
+  // MTL::Texture* pTexture = p_device_->newTexture(pTextureDesc);//->buffer();
+  // p_texture_ = pTexture;
+
+  // pTextureDesc->release();
 }
 
 #include <simd/simd.h>
@@ -292,7 +272,7 @@ HaruhiRenderer::buildBufs() {
     { { +s, -s, +s }, {  0.f, -1.f,  0.f }, { 1.f, 0.f } },
     { { -s, -s, +s }, {  0.f, -1.f,  0.f }, { 0.f, 0.f } }
   };
-
+  
   uint16_t indices[] = {
       0,  1,  2,  2,  3,  0, /* front */
       4,  5,  6,  6,  7,  4, /* right */
@@ -302,8 +282,8 @@ HaruhiRenderer::buildBufs() {
     20, 21, 22, 22, 23, 20, /* bot */
   };
 
-  const size_t vertexData_sz = sizeof(verts);
-  const size_t indexData_sz = sizeof(indices);
+  constexpr size_t vertexData_sz = sizeof(verts);
+  constexpr size_t indexData_sz = sizeof(indices);
 
   MTL::Buffer* pVertBuf =
     p_device_->newBuffer(vertexData_sz, MTL::ResourceStorageModeManaged);
@@ -320,7 +300,7 @@ HaruhiRenderer::buildBufs() {
   pVertexBuf->didModifyRange(Range::Make(0, pVertexBuf->length()));
   pIndexBuf->didModifyRange(Range::Make(0, pIndexBuf->length()));
 
-  const size_t instanceData_sz = MAX_FRAMES_IN_FLIGHT*1000*sizeof(shader_t::InstanceData);
+  const size_t instanceData_sz = MAX_FRAMES_IN_FLIGHT*1*sizeof(shader_t::InstanceData);
   for(size_t i = 0; i< MAX_FRAMES_IN_FLIGHT; ++i)
     pInstanceBuf[i] = p_device_->newBuffer(instanceData_sz, MTL::ResourceStorageModeManaged);
 
@@ -338,8 +318,8 @@ HaruhiRenderer::generateMandelbrotTexture(MTL::CommandBuffer* pCmdBuf) {
     abort();
   }
 
-  unsigned* ptr = reinterpret_cast<unsigned *>(pTextureAnimationBuf->contents());
-  *ptr = animation_ind_ % 5000;
+  // unsigned* ptr = reinterpret_cast<unsigned *>(pTextureAnimationBuf->contents());
+  //# *ptr = (animation_ind_++) % 5000;
   pTextureAnimationBuf->didModifyRange(Range::Make(0, sizeof(unsigned)));
 
   MTL::ComputeCommandEncoder* pCCE = pCmdBuf->computeCommandEncoder();
@@ -348,7 +328,7 @@ HaruhiRenderer::generateMandelbrotTexture(MTL::CommandBuffer* pCmdBuf) {
   pCCE->setTexture(p_texture_, 0);
   pCCE->setBuffer(pTextureAnimationBuf, 0, 0);
 
-  MTL::Size grid_sz = MTL::Size(TEXTURE_WIDTH, TEXTURE_HEIGHT, 1);
+  MTL::Size grid_sz(16, 16, 1); // chunk?
 
   UInteger thread_group_sz_ = p_cps_->maxTotalThreadsPerThreadgroup();
   MTL::Size thread_gruop_sz(thread_group_sz_, 1, 1);
@@ -379,64 +359,39 @@ HaruhiRenderer::draw(MTK::View * pView) {
     dispatch_semaphore_signal(p_renderer->sema_);
   });
 
-  angle_ += .002;
-
-  const float scl = .2f;
   shader_t::InstanceData* p_instanceData =
     reinterpret_cast<shader_t::InstanceData*>(p_instanceData_buf->contents());
   ;
-  float3 objPos = { 0., 0., -10. };
 
-  float4x4 rt = math::makeTranslate(objPos);
-  float4x4 rr1 = math::makeYRotate(-angle_);
-  float4x4 rr0 = math::makeXRotate(angle_ * .5);
-  float4x4 rtInv = math::makeTranslate({ -objPos.x, -objPos.y, -objPos.z });
-  float4x4 fullObjRot = rt * rr1 * rr0 * rtInv;
+  p_instanceData[0].instanceTransform = math::makeTranslate({ 0., 0., -5. });
+  p_instanceData[0].instanceNormalTransform =
+    math::discardTranslation(p_instanceData[0].instanceTransform);
+  p_instanceData[0].instanceColor = {.5,.5,.5,1.};//{ 0., 5., 5., 1. };
 
-  size_t ix = 0, iy = 0, iz = 0;
-  for(size_t i = 0; i< 1000; ++i) {
-    if(ix == 10) {
-      ix = 0;
-      iy += 1;
-    }
-    if(iy == 10) {
-      iy = 0;
-      iz += 1;
-    }
+  //
 
-    float4x4 scale = math::makeScale((float3){ scl, scl, scl });
-    float4x4 zrot = math::makeZRotate(angle_ * sinf((float)ix));
-    float4x4 yrot = math::makeYRotate(angle_ * cosf((float)iy));
-    
-    float x = ((float)ix - 5.) * (2. * scl) + scl;
-    float y = ((float)iy - 5.) * (2. * scl) + scl;
-    float z = ((float)iz - 5.) * (2. * scl);
-
-    float4x4 translate = math::makeTranslate(math::add(objPos, {x, y, z}));
-
-    p_instanceData[i].instanceTransform = fullObjRot * translate * yrot * zrot * scale;
-    p_instanceData[i].instanceNormalTransform = math::discardTranslation(p_instanceData[i].instanceTransform);
-
-    float iDivNumInstances = i / 1000.;
-    float r = iDivNumInstances;
-    float g = 1. - r;
-    float b = sinf(3.141592 * 2. * iDivNumInstances);
-    p_instanceData[i].instanceColor = (float4){ r, g, b, 1. };
-
-    ix += 1;
-  }
   p_instanceData_buf->didModifyRange(Range::Make(0, p_instanceData_buf->length()));
 
   MTL::Buffer* p_cameraData_buf = pCameraBuf[frame_];
   shader_t::CameraData* p_cameraData = reinterpret_cast<shader_t::CameraData *>(p_cameraData_buf->contents());
-  p_cameraData->perspTransform = math::makePerspective(45. * 3.141592 / 180., 1., .03, 500.);
+  constexpr float FOV = 90.;
+  p_cameraData->perspTransform =
+    math::makePerspective(FOV * 3.141592 / 180., 1., .03, 500.)
+    * math::makeYRotate(0.1)
+    * math::makeXRotate(0.1);
+  // const auto delta = animation_ind_/10.;  // printf("%d\n", animation_ind_);
   p_cameraData->worldTransform = math::makeIdentity();
+    // math::makeTranslate({cosf(delta), sinf(delta), 1.});
+
   p_cameraData->worldNormalTransform = math::discardTranslation(p_cameraData->worldTransform);
   p_cameraData_buf->didModifyRange(Range::Make(0, sizeof(shader_t::CameraData)));
 
   generateMandelbrotTexture(p_cmd_buf);
 
   MTL::RenderPassDescriptor* p_rpd = pView->currentRenderPassDescriptor();
+
+  p_rpd->colorAttachments()->object(0)->setClearColor(MTL::ClearColor::Make(0., .8, 1., 1.));
+
   MTL::RenderCommandEncoder* p_rce = p_cmd_buf->renderCommandEncoder(p_rpd);
 
   p_rce->setRenderPipelineState(p_rps_);
@@ -457,7 +412,7 @@ HaruhiRenderer::draw(MTK::View * pView) {
     MTL::IndexType::IndexTypeUInt16,
     pIndexBuf,
     0,
-    1000 );
+    1/*instance cnt*/);
   ;
 
   p_rce->endEncoding();
