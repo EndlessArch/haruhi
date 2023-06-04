@@ -1,5 +1,7 @@
 #include "ResourcePool.hxx"
 
+#include <Metal/Metal.hpp>
+
 HaruhiResourcePool::HaruhiResourcePool() {
   texture_pool_ = {};
 }

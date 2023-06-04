@@ -1,6 +1,7 @@
 #include "LoadResource.hxx"
 
-#include <mtl.hpp>
+// #include <mtl.hpp>
+#include <MetalKit/MetalKit.hpp>
 
 namespace HaruhiResourceLoader {
 

@@ -1,9 +1,12 @@
 #ifndef HARUHI_RESOURCEPOOL_HXX
 #define HARUHI_RESOURCEPOOL_HXX
 
+#include <string>
 #include <map>
 
-#include <mtl.hpp>
+namespace MTL {
+class Texture;
+} // ns MTL
 
 class HaruhiResourcePool {
   std::map<std::string, MTL::Texture*> texture_pool_;

@@ -1,7 +1,9 @@
 #ifndef HARUHI_DELEGATES_HPP
 #define HARUHI_DELEGATES_HPP
 
-#include <mtl.hpp>
+// #include <mtl.hpp>
+#include <Metal/Metal.hpp>
+#include <MetalKit/MetalKit.hpp>
 
 #include "GameEngine.hxx"
 #include "MemoryUtility.hxx"

@@ -12,15 +12,15 @@ target_include_directories(haruhi_mtl INTERFACE ${haruhi_INCLUDE_DIRS})
 
 target_compile_options(haruhi_mtl INTERFACE -std=c++17)
 
-find_library(APPKIT_LIB AppKit)
-find_library(COREFOUNDATION_LIB CoreFoundation)
+# find_library(APPKIT_LIB AppKit)
+# find_library(COREFOUNDATION_LIB CoreFoundation)
 find_library(METAL_LIB Metal)
 find_library(METALKIT_LIB MetalKit)
 find_library(FOUNDATION_LIB Foundation)
 find_library(QUARTZCORE_LIB QuartzCore)
 target_link_libraries(haruhi_mtl INTERFACE
-  ${APPKIT_LIB}
-  ${COREFOUNDATION_LIB}
+  # ${APPKIT_LIB}
+  # ${COREFOUNDATION_LIB}
   ${METAL_LIB}
   ${METALKIT_LIB}
   ${FOUNDATION_LIB}

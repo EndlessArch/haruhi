@@ -6,6 +6,8 @@ find_package(SPNG REQUIRED
   PATHS ${CMAKE_CURRENT_BINARY_DIR}/../third_party/libspng)
 
 add_executable(haruhi ${HARU_SOURCES})
+target_compile_options(haruhi PRIVATE -fno-common)
+
 # target_include_directories(haru PRIVATE spng::spng_static)
 
 # hate cmake target file, nothing works well
