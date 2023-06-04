@@ -6,7 +6,15 @@ find_package(SPNG REQUIRED
   PATHS ${CMAKE_CURRENT_BINARY_DIR}/../third_party/libspng)
 
 add_executable(haruhi ${HARU_SOURCES})
-target_compile_options(haruhi PRIVATE -fno-common)
+target_compile_options(haruhi PRIVATE -fno-common $<IF:$<CONFIG:Debug>,-g,>)
+
+add_custom_target(
+  genDbgSyms ALL
+  COMMAND dsymutil ${CMAKE_CURRENT_BINARY_DIR}/haruhi
+)
+add_dependencies(genDbgSyms haruhi)
+
+add_custom_target(genexdbg COMMAND ${CMAKE_COMMAND} -E echo "debug:$<IF:$<CONFIG:Debug>,Yes,No>")
 
 # target_include_directories(haru PRIVATE spng::spng_static)
 

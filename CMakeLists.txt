@@ -5,6 +5,10 @@ enable_testing()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/header)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
 
