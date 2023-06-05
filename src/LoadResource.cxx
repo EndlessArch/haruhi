@@ -11,11 +11,12 @@ namespace ImageUtil {
 
 std::tuple<size_t, std::unique_ptr<spng_ihdr>, void*>
 load_image_at(const char * img_pth) noexcept {
+  assert(img_pth);
 
   spng_ctx* p_ctx = spng_ctx_new(0);
   assert(p_ctx);
 
-  auto block_texture = fopen("./resource/blocks.png", "r");
+  auto block_texture = fopen(img_pth, "rb");
 
   spng_set_png_file(p_ctx, block_texture);
 
@@ -39,25 +40,25 @@ void
 loadResources(MTL::Device* pDevice, HaruhiResourcePool* pResPool) noexcept {
   using namespace NS;
 
-  auto [sz, ihdr, buf] = ImageUtil::load_image_at("./resource/grass.jpeg");
+  // png
+  auto [sz, ihdr, buf] = ImageUtil::load_image_at("./resource/blocks.png");
 
   MTL::TextureDescriptor* pTexDesc =
     MTL::TextureDescriptor::texture2DDescriptor(
       MTL::PixelFormatRGBA8Unorm_sRGB, ihdr->width, ihdr->height, false);
   pTexDesc->setTextureType(MTL::TextureType2D);
   pTexDesc->setUsage(MTL::TextureUsageRenderTarget|MTL::TextureUsageShaderRead);
-  pTexDesc->setResourceOptions(MTL::ResourceStorageModeManaged);
+  // pTexDesc->setResourceOptions(MTL::ResourceStorageModeManaged);
+  pTexDesc->setStorageMode(MTL::StorageModeManaged);
 
-  auto tex_buf = pDevice->newBuffer(sz, MTL::ResourceStorageModeManaged);
+  auto tex_buf = pDevice->newBuffer(sz, MTL::StorageModeManaged);
   memcpy(tex_buf->contents(), buf, sz);
   tex_buf->didModifyRange(Range::Make(0, sz));
-  // free(buf);
+  free(buf);
   // printf("%u %lu\n", ihdr->width, sz);
-  auto blocks = tex_buf->newTexture(pTexDesc, (unsigned long long)buf, 4*ihdr->width);
+  auto blocks = tex_buf->newTexture(pTexDesc, 0, 4*ihdr->width);
 
   pResPool->setTexture("blocks", blocks);
-
-  return;
 }
 
 } // ns HaruhiResourceLoader

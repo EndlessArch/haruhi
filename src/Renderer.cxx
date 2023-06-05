@@ -43,7 +43,7 @@ HaruhiRenderer::buildShaders() {
     {
         float4 position [[position]];
         float3 normal;
-        half3 color;
+        // half3 color; // is this necessary
         float2 texcoord;
     };
     struct VertexData
@@ -56,7 +56,7 @@ HaruhiRenderer::buildShaders() {
     {
         float4x4 instanceTransform;
         float3x3 instanceNormalTransform;
-        float4 instanceColor;
+        // float4 instanceColor;
     };
     struct CameraData
     {
@@ -82,14 +82,14 @@ HaruhiRenderer::buildShaders() {
         ccam.worldNormalTransform *
         (cinst.instanceNormalTransform * cvert.normal);
       ;
-      return (struct v2f){pos, norm, half3(cinst.instanceColor.rgb), cvert.texcoord.xy};
+      return (struct v2f){pos, norm, /*half3(cinst.instanceColor.rgb),*/ cvert.texcoord.xy};
     }
     half4 fragment fn_frag(
         v2f in [[stage_in]],
         texture2d<half, access::sample> tex [[texture(0)]],
         sampler texSampler [[sampler(0)]]
       ) {
-        // half3 texel = {.5, .5, .5};
+      // half3 texel = {.5, .5, .5};
       half3 texel = tex.sample( texSampler, in.texcoord ).rgb;
 
       float3 l = normalize(float3( 1.0, 1.0, 0.8 ));
@@ -97,11 +97,11 @@ HaruhiRenderer::buildShaders() {
 
       half ndotl = half( saturate( dot( n, l ) ) );
 
-      half3 illum = (in.color * texel * 0.1) + (in.color * texel * ndotl);
+      half3 illum = (/*in.color* */texel * 0.1) + (/*in.color* */texel * ndotl);
       return half4( illum, 1.0 );
 
       // return half4(1.);
-      return half4(tex.sample(texSampler, in.texcoord).rgb, 1.);
+      // return half4(tex.sample(texSampler, in.texcoord).rgb, 1.);
     }
     )";
   ;
@@ -285,8 +285,8 @@ HaruhiRenderer::buildBufs() {
   
   uint16_t indices[] = {
     // front
-    0,  1,  2,
-    2,  3,  0,
+    0,  1,  2, // ㄱ
+    2,  3,  0, // ㄴ
     // right
     4,  5,  6,
     6,  7,  4,
@@ -387,7 +387,8 @@ HaruhiRenderer::draw(MTK::View * pView) {
     reinterpret_cast<shader_t::InstanceData*>(p_instanceData_buf->contents());
   p_instanceData[0].instanceTransform =
     math::makeTranslate({ 0., 0., -3. })
-    * math::makeYRotate(__cnt*0.02*3.14) * math::makeXRotate(0.2);
+    * math::makeXRotate(0.2)
+    * math::makeYRotate(__cnt*.002*3.14);
   p_instanceData[0].instanceNormalTransform =
     math::discardTranslation(p_instanceData[0].instanceTransform);
   p_instanceData[0].instanceColor = {.5,.5,.5,1.};//{ 0., 5., 5., 1. };
@@ -408,17 +409,20 @@ HaruhiRenderer::draw(MTK::View * pView) {
   // WARNING: Maybe you should restart your computer
   // computeTexture(p_cmd_buf);
 
+  // TODO: as a class member/static variable
+  //       to prevent being constructed every single time
   MTL::SamplerDescriptor* p_sd = MTL::SamplerDescriptor::alloc()->init();
-  // p_sd->setNormalizedCoordinates(false);
-  p_sd->setMagFilter(MTL::SamplerMinMagFilterLinear);
-  p_sd->setMinFilter(MTL::SamplerMinMagFilterLinear);
+  p_sd->setNormalizedCoordinates(true);
+  p_sd->setMagFilter(MTL::SamplerMinMagFilterNearest);
+  p_sd->setMinFilter(MTL::SamplerMinMagFilterNearest);
   p_sd->setSAddressMode(MTL::SamplerAddressModeRepeat);
   p_sd->setTAddressMode(MTL::SamplerAddressModeRepeat);
   auto p_ss = p_device_->newSamplerState(p_sd);
 
   MTL::RenderPassDescriptor* p_rpd = pView->currentRenderPassDescriptor();
 
-  p_rpd->colorAttachments()->object(0)->setClearColor(MTL::ClearColor::Make(0., .8, 1., 1.));
+  p_rpd->colorAttachments()->object(0)->setClearColor(
+    MTL::ClearColor::Make(0., .8, 1., 1.));
 
   MTL::RenderCommandEncoder* p_rce = p_cmd_buf->renderCommandEncoder(p_rpd);
 
@@ -447,6 +451,9 @@ HaruhiRenderer::draw(MTK::View * pView) {
   p_rce->endEncoding();
   p_cmd_buf->presentDrawable(pView->currentDrawable());
   p_cmd_buf->commit();
+
+  p_sd->release();
+  p_ss->release();
 
   pARPool->release();
 }
